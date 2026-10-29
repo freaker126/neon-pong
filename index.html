@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Freaker126 Neon Pong</title>
+    <style>
+        body {
+            margin: 0; background-color: #0d0d0d;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            height: 100vh; overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        h1 {
+            color: #00ffff; text-shadow: 0 0 15px #00ffff;
+            margin-bottom: 20px; font-size: 36px; letter-spacing: 2px;
+        }
+        canvas {
+            border: 4px solid #39ff14;
+            box-shadow: 0 0 20px #39ff14, inset 0 0 20px #39ff14;
+            background-color: #050505;
+        }
+        .btn-container {
+            display: flex; gap: 15px; margin-top: 15px;
+        }
+        button {
+            background-color: #ff007f; color: #fff;
+            border: 2px solid #ff007f; box-shadow: 0 0 10px #ff007f;
+            padding: 8px 16px; font-family: 'Courier New', monospace;
+            font-size: 14px; font-weight: bold; cursor: pointer;
+            text-shadow: 0 0 5px #fff;
+        }
+        button.muted, button.paused {
+            background-color: #333; color: #888;
+            border-color: #555; box-shadow: none; text-shadow: none;
+        }
+    </style>
+</head>
+<body>
+<h1>Freaker126 Neon Pong</h1>
+<canvas id="pongCanvas" width="800" height="500"></canvas>
+<div class="btn-container">
+    <button id="muteBtn" onclick="toggleMusic()">MUSIC: ON</button>
+    <button id="pauseBtn" onclick="togglePause()">PAUSE</button>
+    <button id="quitBtn" onclick="quitGame()">QUIT</button>
+</div>
+<script>
+const canvas = document.getElementById("pongCanvas");
+const ctx = canvas.getContext("2d");
+
+let gameState = "START";
+let matchWinner = "";
+let isPaused = false;
+let isMuted = false;
+
+let audioCtx = null;
+let currentSequenceStep = 0;
+let lastBeatTime = 0;
+const tempo = 120; 
+const beatDuration = 60 / tempo / 2;
+
+const bassSequence = [
+    164.81, 164.81, 164.81, 164.81, 
+    196.00, 196.00, 196.00, 196.00, 
+    220.00, 220.00, 220.00, 220.00, 
+    146.83, 146.83, 146.83, 146.83  
+];
+
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        lastBeatTime = audioCtx.currentTime;
+    }
+}
+
+function playSoundEffect(type) {
+    if (!audioCtx) return;
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    let now = audioCtx.currentTime;
+    
+    if (type === 'paddle') {
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        osc.start(now); osc.stop(now + 0.1);
+    } else if (type === 'wall') {
+        osc.type = 'sine'; osc.frequency.setValueAtTime(150, now);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+        osc.start(now); osc.stop(now + 0.08);
+    } else if (type === 'score') {
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, now);
+        osc.frequency.linearRampToValueAtTime(50, now + 0.3);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+    }
+}
+
+function toggleMusic() {
+    isMuted = !isMuted;
+    const btn = document.getElementById("muteBtn");
+    if (isMuted) { btn.innerText = "MUSIC: OFF"; btn.className = "muted"; }
+    else { btn.innerText = "MUSIC: ON"; btn.className = ""; }
+}
+
+function updateMusic() {
+    if (!audioCtx || gameState !== "PLAYING" || isPaused || isMuted) return;
+    let currentTime = audioCtx.currentTime;
+    while (lastBeatTime < currentTime + 0.1) {
+        let noteFreq = bassSequence[currentSequenceStep];
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(noteFreq, lastBeatTime);
+        let filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass'; filter.frequency.setValueAtTime(400, lastBeatTime);
+        osc.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+        gain.gain.setValueAtTime(0.15, lastBeatTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, lastBeatTime + beatDuration - 0.02);
+        osc.start(lastBeatTime); osc.stop(lastBeatTime + beatDuration);
+        currentSequenceStep = (currentSequenceStep + 1) % bassSequence.length;
+        lastBeatTime += beatDuration;
+    }
+}
+
+const paddleWidth = 15; const paddleHeight = 100; const ballRadius = 8; const playerSpeed = 8;
+const p1 = { x: 30, y: canvas.height / 2 - paddleHeight / 2, score: 0, color: "#00ffff" };
+const p2 = { x: canvas.width - 30 - paddleWidth, y: canvas.height / 2 - paddleHeight / 2, score: 0, color: "#ff007f", speed: 4.5 };
+const ball = { x: canvas.width / 2, y: canvas.height / 2, dx: 0, dy: 0, speed: 5.5, color: "#39ff14" };
+const keys = {};
+
+function togglePause() {
+    if (gameState !== "PLAYING") return;
+    isPaused = !isPaused;
+    const btn = document.getElementById("pauseBtn");
+    if (isPaused) { btn.innerText = "RESUME"; btn.className = "paused"; }
+    else { btn.innerText = "PAUSE"; btn.className = ""; }
+}
+
+function quitGame() {
+    gameState = "START"; isPaused = false;
+    p1.score = 0; p2.score = 0; matchWinner = "";
+    document.getElementById("pauseBtn").innerText = "PAUSE";
+    document.getElementById("pauseBtn").className = "";
+}
+
+window.addEventListener("keydown", (e) => {
+    keys[e.key] = true;
+    if (e.key === " ") {
+        e.preventDefault();
+        if (gameState === "START") { initAudio(); gameState = "PLAYING"; resetBall(); }
+        else if (gameState === "GAMEOVER") { quitGame(); gameState = "PLAYING"; resetBall(); }
+    }
+    if (e.key === "p" || e.key === "P") { e.preventDefault(); togglePause(); }
+});
+window.addEventListener("keyup", (e) => keys[e.key] = false);
+
+function resetBall() {
+    ball.x = canvas.width / 2; ball.y = canvas.height / 2; ball.speed = 5.5;
+    let directionX = Math.random() > 0.5 ? 1 : -1;
+    let initialRandomY = (Math.random() * 0.4 - 0.2); 
+    ball.dx = directionX * ball.speed; ball.dy = initialRandomY * ball.speed; 
+}
+
+function checkMatchOver() {
+    if (p1.score >= 7) { matchWinner = "PLAYER"; gameState = "GAMEOVER"; }
+    else if (p2.score >= 7) { matchWinner = "AI"; gameState = "GAMEOVER"; }
+}
+
+function drawRect(x, y, w, h, color) {
+    ctx.shadowBlur = 15; ctx.shadowColor = color; ctx.fillStyle = color; ctx.fillRect(x, y, w, h);
+}
+function drawCircle(x, y, r, color) {
+    ctx.shadowBlur = 15; ctx.shadowColor = color; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
+function drawText(text, x, y, color, size = "45px") {
+    ctx.shadowBlur = 10; ctx.shadowColor = color; ctx.fillStyle = color; ctx.font = `${size} 'Courier New'`; ctx.fillText(text, x, y);
+}
+function drawNet() {
+    ctx.shadowBlur = 5; ctx.shadowColor = "#333"; ctx.strokeStyle = "#333"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(canvas.width / 2, 0); ctx.lineTo(canvas.width / 2, canvas.height); ctx.stroke();
+}
+
+function update() {
+    if (gameState !== "PLAYING" || isPaused) return;
+    updateMusic();
+    if (keys["w"] || keys["W"]) p1.y = Math.max(0, p1.y - playerSpeed);
+    if (keys["s"] || keys["S"]) p1.y = Math.min(canvas.height - paddleHeight, p1.y + playerSpeed);
+
+    let p2Center = p2.y + paddleHeight / 2;
+    if (p2Center < ball.y - 10) p2.y = Math.min(canvas.height - paddleHeight, p2.y + p2.speed);
+    else if (p2Center > ball.y + 10) p2.y = Math.max(0, p2.y - p2.speed);
+
+    let nextBallX = ball.x + ball.dx; let nextBallY = ball.y + ball.dy;
+    if (nextBallY - ballRadius <= 0) { ball.y = ballRadius; ball.dy = -ball.dy; playSoundEffect('wall'); }
+    else if (nextBallY + ballRadius >= canvas.height) { ball.y = canvas.height - ballRadius; ball.dy = -ball.dy; playSoundEffect('wall'); }
+
+    let hitPaddle = false;
+    if (ball.dx < 0 && nextBallX - ballRadius <= p1.x + paddleWidth && ball.x - ballRadius >= p1.x) {
+        if (nextBallY + ballRadius >= p1.y && nextBallY - ballRadius <= p1.y + paddleHeight) {
+            let relativeIntersectY = (p1.y + (paddleHeight / 2)) - nextBallY;
+            let normalizedIntersectY = relativeIntersectY / (paddleHeight / 2);
+            if (Math.abs(normalizedIntersectY) < 0.15) normalizedIntersectY = (Math.random() > 0.5 ? 0.25 : -0.25);
+            ball.speed = Math.min(13, ball.speed + 0.5); 
+            ball.dx = Math.abs(Math.cos(normalizedIntersectY) * ball.speed); ball.dy = -Math.sin(normalizedIntersectY) * ball.speed;
+            ball.x = p1.x + paddleWidth + ballRadius; hitPaddle = true; playSoundEffect('paddle');
+        }
+    }
+    else if (ball.dx > 0 && nextBallX + ballRadius >= p2.x && ball.x + ballRadius <= p2.x + paddleWidth) {
+        if (nextBallY + ballRadius >= p2.y && nextBallY - ballRadius <= p2.y + paddleHeight) {
+            let relativeIntersectY = (p2.y + (paddleHeight / 2)) - nextBallY;
+            let normalizedIntersectY = relativeIntersectY / (paddleHeight / 2);
+            if (Math.abs(normalizedIntersectY) < 0.15) normalizedIntersectY = (Math.random() > 0.5 ? 0.25 : -0.25);
+            ball.speed = Math.min(13, ball.speed + 0.5);
+            ball.dx = -Math.abs(Math.cos(normalizedIntersectY) * ball.speed); ball.dy = -Math.sin(normalizedIntersectY) * ball.speed;
+            ball.x = p2.x - ballRadius; hitPaddle = true; playSoundEffect('paddle');
+        }
+    }
+    if (!hitPaddle) { ball.x += ball.dx; ball.y += ball.dy; }
+    if (ball.x < p1.x) { p2.score++; playSoundEffect('score'); checkMatchOver(); if (gameState === "PLAYING") resetBall(); }
+    else if (ball.x > p2.x + paddleWidth) { p1.score++; playSoundEffect('score'); checkMatchOver(); if (gameState === "PLAYING") resetBall(); }
+}
+
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.textAlign = "center";
+    if (gameState === "START") {
+        drawText("NEON RETRO PONG", canvas.width / 2, canvas.height / 2 - 80, "#39ff14", "45px");
+        drawText("FIRST TO 7 BALLS WINS", canvas.width / 2, canvas.height / 2 - 30, "#00ffff", "20px");
+        drawText("W - UP | S - DOWN | P - PAUSE", canvas.width / 2, canvas.height / 2 + 20, "#00ffff", "18px");
+        drawText("PRESS SPACE TO START", canvas.width / 2, canvas.height / 2 + 80, "#ff007f", "22px");
+    } else if (gameState === "GAMEOVER") {
+        if (matchWinner === "PLAYER") drawText("YOU WIN!", canvas.width / 2, canvas.height / 2 - 40, "#00ffff", "55px");
+        else drawText("GAME OVER", canvas.width / 2, canvas.height / 2 - 40, "#ff007f", "55px");
+        drawText("PRESS SPACE TO REMATCH", canvas.width / 2, canvas.height / 2 + 50, "#39ff14", "22px");
+    } else {
+        drawNet(); drawRect(p1.x, p1.y, paddleWidth, paddleHeight, p1.color); drawRect(p2.x, p2.y, paddleWidth, paddleHeight, p2.color);
+        drawCircle(ball.x, ball.y, ballRadius, ball.color);
+        if (isPaused) drawText("GAME PAUSED", canvas.width / 2, canvas.height / 2, "#39ff14", "40px");
+        ctx.shadowBlur = 0; ctx.textAlign = "left";
+        drawText(p1.score, canvas.width / 4, 60, p1.color); drawText(p2.score, 3 * canvas.width / 4, 60, p2.color);
+    }
+}
+function gameLoop() { update(); render(); requestAnimationFrame(gameLoop); }
+gameLoop();
+</script>
+</body>
+</html>
+
