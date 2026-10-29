@@ -3,47 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Freaker126 Neon Pong</title>
+    <title>Freaker125 Neon Pong</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
         body {
-            margin: 0; background-color: #0d0d0d;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            height: 100vh; overflow: hidden;
+            margin: 0; 
+            padding: 10px;
+            background-color: #0d0d0d;
+            display: flex; 
+            flex-direction: column;
+            justify-content: center; 
+            align-items: center;
+            min-height: 100vh; 
+            overflow: hidden;
             font-family: 'Courier New', Courier, monospace;
-            touch-action: none; /* Prevents mobile gesture interference */
+            touch-action: none; /* Prevents mobile page pull-to-refresh & scrolling */
         }
         h1 {
-            color: #00ffff; text-shadow: 0 0 15px #00ffff;
-            margin-bottom: 10px; font-size: 28px; letter-spacing: 2px;
+            color: #00ffff; 
+            text-shadow: 0 0 15px #00ffff;
+            margin: 0 0 10px 0; 
+            font-size: clamp(18px, 4vw, 28px); 
+            letter-spacing: 2px;
             text-align: center;
         }
         canvas {
             border: 4px solid #39ff14;
             box-shadow: 0 0 20px #39ff14, inset 0 0 20px #39ff14;
             background-color: #050505;
-            max-width: 95vw;
-            max-height: 70vh;
+            /* Dynamic sizing so top and bottom walls are always visible */
+            width: 100%;
+            max-width: 800px;
+            max-height: 65vh;
+            aspect-ratio: 8 / 5;
             object-fit: contain;
         }
         .btn-container {
-            display: flex; gap: 15px; margin-top: 15px;
+            display: flex; 
+            gap: 10px; 
+            margin-top: 10px;
         }
         button {
-            background-color: #ff007f; color: #fff;
-            border: 2px solid #ff007f; box-shadow: 0 0 10px #ff007f;
-            padding: 8px 16px; font-family: 'Courier New', monospace;
-            font-size: 14px; font-weight: bold; cursor: pointer;
+            background-color: #ff007f; 
+            color: #fff;
+            border: 2px solid #ff007f; 
+            box-shadow: 0 0 10px #ff007f;
+            padding: 8px 14px; 
+            font-family: 'Courier New', monospace;
+            font-size: 13px; 
+            font-weight: bold; 
+            cursor: pointer;
             text-shadow: 0 0 5px #fff;
         }
         button.muted, button.paused {
-            background-color: #333; color: #888;
-            border-color: #555; box-shadow: none; text-shadow: none;
+            background-color: #333; 
+            color: #888;
+            border-color: #555; 
+            box-shadow: none; 
+            text-shadow: none;
         }
     </style>
 </head>
 <body>
-<h1>Freaker126 Neon Pong</h1>
+<h1>Freaker125 Neon Pong</h1>
 <canvas id="pongCanvas" width="800" height="500"></canvas>
 <div class="btn-container">
     <button id="muteBtn" onclick="toggleMusic()">MUSIC: ON</button>
@@ -165,7 +189,10 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => keys[e.key] = false);
 
-// --- TOUCH & MOBILE CONTROLS ---
+// --- ENHANCED TOUCH CONTROLS ---
+let touchStartY = null;
+let paddleStartY = null;
+
 canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
     initAudio();
@@ -176,22 +203,33 @@ canvas.addEventListener("touchstart", (e) => {
         quitGame();
         gameState = "PLAYING";
         resetBall();
+    } else if (gameState === "PLAYING" && !isPaused) {
+        // Record touch starting position for relative movement
+        touchStartY = e.touches[0].clientY;
+        paddleStartY = p1.y;
     }
 }, { passive: false });
 
 canvas.addEventListener("touchmove", (e) => {
     e.preventDefault();
-    if (gameState !== "PLAYING" || isPaused) return;
+    if (gameState !== "PLAYING" || isPaused || touchStartY === null) return;
 
     const rect = canvas.getBoundingClientRect();
-    const touch = e.touches[0];
     const scaleY = canvas.height / rect.height;
-    const touchY = (touch.clientY - rect.top) * scaleY;
+    
+    // Calculate drag distance relative to touch starting point
+    const deltaY = (e.touches[0].clientY - touchStartY) * scaleY;
+    
+    p1.y = paddleStartY + deltaY;
 
-    p1.y = touchY - (paddleHeight / 2);
+    // Boundaries check
     if (p1.y < 0) p1.y = 0;
     if (p1.y + paddleHeight > canvas.height) p1.y = canvas.height - paddleHeight;
 }, { passive: false });
+
+canvas.addEventListener("touchend", () => {
+    touchStartY = null;
+});
 
 function resetBall() {
     ball.x = canvas.width / 2; ball.y = canvas.height / 2; ball.speed = 5.5;
@@ -263,7 +301,7 @@ function render() {
     if (gameState === "START") {
         drawText("NEON RETRO PONG", canvas.width / 2, canvas.height / 2 - 80, "#39ff14", "45px");
         drawText("FIRST TO 7 BALLS WINS", canvas.width / 2, canvas.height / 2 - 30, "#00ffff", "20px");
-        drawText("W/S - KEYS | DRAG SCREEN TO MOVE", canvas.width / 2, canvas.height / 2 + 20, "#00ffff", "18px");
+        drawText("W/S - KEYS | SWIPE ANYWHERE TO MOVE", canvas.width / 2, canvas.height / 2 + 20, "#00ffff", "18px");
         drawText("PRESS SPACE OR TAP TO START", canvas.width / 2, canvas.height / 2 + 80, "#ff007f", "22px");
     } else if (gameState === "GAMEOVER") {
         if (matchWinner === "PLAYER") drawText("YOU WIN!", canvas.width / 2, canvas.height / 2 - 40, "#00ffff", "55px");
