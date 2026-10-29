@@ -10,7 +10,7 @@
         }
         body {
             margin: 0; 
-            padding: 10px;
+            padding: 5px;
             background-color: #0d0d0d;
             display: flex; 
             flex-direction: column;
@@ -19,40 +19,40 @@
             min-height: 100vh; 
             overflow: hidden;
             font-family: 'Courier New', Courier, monospace;
-            touch-action: none; /* Prevents mobile page pull-to-refresh & scrolling */
+            touch-action: none;
         }
         h1 {
             color: #00ffff; 
             text-shadow: 0 0 15px #00ffff;
-            margin: 0 0 10px 0; 
-            font-size: clamp(18px, 4vw, 28px); 
+            margin: 0 0 5px 0; 
+            font-size: clamp(16px, 3.5vw, 24px); 
             letter-spacing: 2px;
             text-align: center;
         }
         canvas {
-            border: 4px solid #39ff14;
-            box-shadow: 0 0 20px #39ff14, inset 0 0 20px #39ff14;
+            border: 3px solid #39ff14;
+            box-shadow: 0 0 15px #39ff14, inset 0 0 15px #39ff14;
             background-color: #050505;
-            /*  Responsive sizing to keep borders off screen edges */
             width: 100%;
-            max-width: 90vw;
-            max-height: 65vh;
+            max-width: 85vw;
+            max-height: 55vh; /* Scaled down so buttons remain visible in landscape */
             aspect-ratio: 75 / 50;
             object-fit: contain;
         }
         .btn-container {
             display: flex; 
             gap: 10px; 
-            margin-top: 10px;
+            margin-top: 8px;
+            z-index: 10;
         }
         button {
             background-color: #ff007f; 
             color: #fff;
             border: 2px solid #ff007f; 
-            box-shadow: 0 0 10px #ff007f;
-            padding: 8px 14px; 
+            box-shadow: 0 0 8px #ff007f;
+            padding: 6px 12px; 
             font-family: 'Courier New', monospace;
-            font-size: 13px; 
+            font-size: 12px; 
             font-weight: bold; 
             cursor: pointer;
             text-shadow: 0 0 5px #fff;
@@ -64,11 +64,19 @@
             box-shadow: none; 
             text-shadow: none;
         }
+
+        /* Special adjustments for short screens / landscape mode */
+        @media (max-height: 500px) {
+            h1 { font-size: 14px; margin-bottom: 2px; }
+            canvas { max-height: 50vh; }
+            button { padding: 4px 8px; font-size: 11px; }
+            .btn-container { margin-top: 4px; }
+        }
     </style>
 </head>
 <body>
-<h1>Freaker126 Neon Pong</h1>
-<canvas id="pongCanvas" width="800" height="500"></canvas>
+<h1>Freaker125 Neon Pong</h1>
+<canvas id="pongCanvas" width="750" height="500"></canvas>
 <div class="btn-container">
     <button id="muteBtn" onclick="toggleMusic()">MUSIC: ON</button>
     <button id="pauseBtn" onclick="togglePause()">PAUSE</button>
@@ -100,12 +108,15 @@ const bassSequence = [
 function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        lastBeatTime = audioCtx.currentTime;
     }
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+    lastBeatTime = audioCtx.currentTime;
 }
 
 function playSoundEffect(type) {
-    if (!audioCtx) return;
+    if (!audioCtx || audioCtx.state !== 'running') return;
     let osc = audioCtx.createOscillator();
     let gain = audioCtx.createGain();
     osc.connect(gain); gain.connect(audioCtx.destination);
@@ -132,6 +143,7 @@ function playSoundEffect(type) {
 }
 
 function toggleMusic() {
+    initAudio();
     isMuted = !isMuted;
     const btn = document.getElementById("muteBtn");
     if (isMuted) { btn.innerText = "MUSIC: OFF"; btn.className = "muted"; }
@@ -139,7 +151,7 @@ function toggleMusic() {
 }
 
 function updateMusic() {
-    if (!audioCtx || gameState !== "PLAYING" || isPaused || isMuted) return;
+    if (!audioCtx || audioCtx.state !== 'running' || gameState !== "PLAYING" || isPaused || isMuted) return;
     let currentTime = audioCtx.currentTime;
     while (lastBeatTime < currentTime + 0.1) {
         let noteFreq = bassSequence[currentSequenceStep];
@@ -182,20 +194,21 @@ window.addEventListener("keydown", (e) => {
     keys[e.key] = true;
     if (e.key === " ") {
         e.preventDefault();
-        if (gameState === "START") { initAudio(); gameState = "PLAYING"; resetBall(); }
+        initAudio();
+        if (gameState === "START") { gameState = "PLAYING"; resetBall(); }
         else if (gameState === "GAMEOVER") { quitGame(); gameState = "PLAYING"; resetBall(); }
     }
     if (e.key === "p" || e.key === "P") { e.preventDefault(); togglePause(); }
 });
 window.addEventListener("keyup", (e) => keys[e.key] = false);
 
-// --- ENHANCED TOUCH CONTROLS ---
+// --- TOUCH & AUDIO UNLOCK CONTROLS ---
 let touchStartY = null;
 let paddleStartY = null;
 
 canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    initAudio();
+    initAudio(); // Unlocks audio on first screen touch
     if (gameState === "START") {
         gameState = "PLAYING";
         resetBall();
@@ -204,7 +217,6 @@ canvas.addEventListener("touchstart", (e) => {
         gameState = "PLAYING";
         resetBall();
     } else if (gameState === "PLAYING" && !isPaused) {
-        // Record touch starting position for relative movement
         touchStartY = e.touches[0].clientY;
         paddleStartY = p1.y;
     }
@@ -216,13 +228,10 @@ canvas.addEventListener("touchmove", (e) => {
 
     const rect = canvas.getBoundingClientRect();
     const scaleY = canvas.height / rect.height;
-    
-    // Calculate drag distance relative to touch starting point
     const deltaY = (e.touches[0].clientY - touchStartY) * scaleY;
     
     p1.y = paddleStartY + deltaY;
 
-    // Boundaries check
     if (p1.y < 0) p1.y = 0;
     if (p1.y + paddleHeight > canvas.height) p1.y = canvas.height - paddleHeight;
 }, { passive: false });
@@ -302,11 +311,11 @@ function render() {
         drawText("NEON RETRO PONG", canvas.width / 2, canvas.height / 2 - 80, "#39ff14", "45px");
         drawText("FIRST TO 7 BALLS WINS", canvas.width / 2, canvas.height / 2 - 30, "#00ffff", "20px");
         drawText("W/S - KEYS | SWIPE ANYWHERE TO MOVE", canvas.width / 2, canvas.height / 2 + 20, "#00ffff", "18px");
-        drawText("PRESS SPACE OR TAP TO START", canvas.width / 2, canvas.height / 2 + 80, "#ff007f", "22px");
+        drawText("TAP SCREEN TO START", canvas.width / 2, canvas.height / 2 + 80, "#ff007f", "22px");
     } else if (gameState === "GAMEOVER") {
         if (matchWinner === "PLAYER") drawText("YOU WIN!", canvas.width / 2, canvas.height / 2 - 40, "#00ffff", "55px");
         else drawText("GAME OVER", canvas.width / 2, canvas.height / 2 - 40, "#ff007f", "55px");
-        drawText("PRESS SPACE OR TAP TO REMATCH", canvas.width / 2, canvas.height / 2 + 50, "#39ff14", "22px");
+        drawText("TAP SCREEN TO REMATCH", canvas.width / 2, canvas.height / 2 + 50, "#39ff14", "22px");
     } else {
         drawNet(); drawRect(p1.x, p1.y, paddleWidth, paddleHeight, p1.color); drawRect(p2.x, p2.y, paddleWidth, paddleHeight, p2.color);
         drawCircle(ball.x, ball.y, ballRadius, ball.color);
