@@ -4,7 +4,7 @@ A retro-arcade, neon-themed Pong game built with HTML5 Canvas, CSS, and Vanilla 
 
 ## 🕹️ Live Demo
 Play the game live on GitHub Pages:
-👉 **[Play Freaker126 Neon Pong Here](https://freaker125.github.io/neon-pong/)**
+👉 **[Play Freaker126 Neon Pong Here](https://freaker126.github.io/neon-pong/)**
 
 ---
 
